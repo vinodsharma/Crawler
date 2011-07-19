@@ -50,10 +50,10 @@ wget http://pypi.python.org/packages/2.6/C/CouchDB/CouchDB-0.8-py2.6.egg
 easy_install CouchDB-0.8-py2.6.egg
 
 #install python webkit
-git clone git://git.savannah.gnu.org/pythonwebkit.git
-cd pythonwebkit
-git checkout python_codegen
-./autogen.sh
-make
-make install
-cd ../
+#git clone git://git.savannah.gnu.org/pythonwebkit.git
+#cd pythonwebkit
+#git checkout python_codegen
+#./autogen.sh
+#make
+#make install
+#cd ../
