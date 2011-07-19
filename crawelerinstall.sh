@@ -1,15 +1,15 @@
 mkdir crawlerinstall
 cd crawlerinstall
-apt-get install git
-apt-get install python-dev python-ply
-apt-get install build-essential
+apt-get -y install git
+apt-get -y install python-dev python-ply
+apt-get -y install build-essential
 #apt-get build-dep libwebkit-1.0-2
 #apt-get install libwebkit-1.0-2
 # next line will do work of last two lines
-apt-get build-dep libwebkit-dev
-apt-get install libwebkit-dev
-aptitude install gtk-doc-tools
-apt-get install bison
+apt-get -y build-dep libwebkit-dev
+apt-get -y install libwebkit-dev
+aptitude -y install gtk-doc-tools
+apt-get -y install bison
 #install pycario
 wget http://cairographics.org/releases/pycairo-1.8.8.tar.gz
 tar xvf pycairo-1.8.8.tar.gz
@@ -35,8 +35,8 @@ make install
 cd ../
 
 #install rabbitmq server
-apt-get install rabbitmq-server
-apt-get install python-pip
+apt-get -y install rabbitmq-server
+apt-get -y install python-pip
 pip install pika
 pip install xlrd
 pip install xlwt
