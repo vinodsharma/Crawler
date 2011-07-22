@@ -6,11 +6,8 @@ install coucdb python module & pika python module
 run make 
 
 #usage example
-python controller.py -n 3 -r localhost -q newhello -s http://localhost:5984 -b testrun2 -d 3 -f no -m 2
+./workgen -n 3 -r localhost -q newhello -s http://localhost:5984 -b testrun2 -d 3 -f no -m 2
 
 -n is the number of workers
 -d is the depth of the crawl
 -m is the maximum number of urls to fetech from a page
-
-keep -f to no as yes mode is not supported well at present
-

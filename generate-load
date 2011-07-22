@@ -1,0 +1,6 @@
+#!/bin/bash
+cd "`dirname $0`"
+for i in {1..1}
+do
+   xvfb-run --auto-servernum python ./controller.py $@
+done

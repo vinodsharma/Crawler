@@ -3,6 +3,8 @@
 # vim:ts=4:sw=4:expandtab
 ######################################################################
 
+"""Worker task: does the actual browsing work."""
+
 import gtk
 import sys
 import pywebkitgtk as webkit
@@ -10,23 +12,22 @@ import random
 from datetime import datetime
 from datetime import timedelta
 import time
-import signal, os
-import pika
-from controller import RabbitMQ
+import os
 import couchdb
 import getopt
 import json
+import argparse
+import uuid
+import logging
+from logging import *
+from queue import RabbitMQ
 
-SITE_URL="http://ec2-50-18-23-52.us-west-1.compute.amazonaws.com"
-
-#global msg = None
 def randstr(l = 32):
     return "".join(["%.2x" % random.randint(0, 0xFF) for i in range(l/2)])
 
 class DOMWalker:
-    def __init__(self,fastcrawl,rdepth,maxurl2add):
+    def __init__(self,rdepth,maxurl2add):
         self.__indent = 0
-        self.__fastcrawl = fastcrawl
         self.__rdepth = rdepth
         self.__url2add = maxurl2add
 
@@ -46,10 +47,8 @@ class DOMWalker:
                             'url': urlval,
                             'depth': udepth
                             }
-                    if self.__fastcrawl == "yes":
-                        msg1.send(json.dumps(msgToSend))
 
-                    msg.send(json.dumps(msgToSend))
+                    queue.send(json.dumps(msgToSend))
 
 
                     self.__url2add -= 1
@@ -70,14 +69,13 @@ class DOMWalker:
 
 
 class Browser():
-    def __init__(self,fastcrawl,maxurl2add):
-        self.__fastcrawl = fastcrawl
+    def __init__(self,maxurl2add):
         self.__maxurl2add = maxurl2add
         self.__rdepth = None
         self.__bid = randstr(16)
         self.__webkit = webkit.WebView()
         self.__webkit.SetDocumentLoadedCallback(self._DOM_ready)
-        print >> sys.stderr,  "Spawned new browser", self.__bid
+        info("Spawned new browser " + str(self.__bid))
 
     def __del__(self):
         pass
@@ -163,47 +161,41 @@ class Browser():
         #print >> sys.stderr,  "URL:", document.URL
         #print >> sys.stderr,  "Title:", document.title
         #print >> sys.stderr,  "Cookies:", document.cookie
-        DOMWalker(self.__fastcrawl,self.__rdepth,self.__maxurl2add).walk_node(document)
+        DOMWalker(self.__rdepth,self.__maxurl2add).walk_node(document)
         self.__rdepth = None
         gtk.mainquit()
 
     def _is_Page_Loaded(self):
-        print >> sys.stderr,  "_is_Page_Loaded"
+        debug("_is_Page_Loaded")
         self.pageLoaded = True
         gtk.mainquit()
 
-def handler(signum, frame):
-    print "handler called"
-
 def callback(ch, method, properties, body):
-    msg.ack(ch,method)
-    print " [worker",wid,"] Received %r" % (body,)
+    info("received %r" % (body,))
     message = json.loads(body)
-    if message.get("command") == quit:
-        time.sleep(2);
-        msg.stoprecv()
-        msg.close()
-        sys.exit()
-    elif message.get("command") == visit:
-
+    if message.get("command") == "quit":
+        info("Got quit command, exiting...")
+        queue.stoprecv()
+        queue.close()
+        sys.exit(77) # 77 indicates clean shutdown
+    elif message.get("command") == "visit":
         url = message.get("url")
         rdepth = int(message.get("depth"))
         # visit url to fetch more urls
-        if fastcrawl == "no" and rdepth > 0:
+        if rdepth > 0:
             #print " [worker",wid,"] crawling: ", url
             browser.visit(url,rdepth)
             gtk.main()
 
-
-        # visit url to fetech the response time
-        print " [worker",wid,"] visiting: ","%s/?q="%(SITE_URL)+url
         #browser = Browser()
         tstart = datetime.now()
-        browser1 = Browser("no",0)
-        #browser1.visit(url,0)
-        browser1.visit("%s/?q="%(SITE_URL)+url,0)
-        #browser.visit("http://localhost/")
-        gtk.main()
+        # visit url to fetech the response time
+        if args.proxy:
+            browser1 = Browser(0)
+            target_url = "%s/?q="%(args.proxy) + url
+            info("Visiting URL: " + target_url)
+            browser1.visit(target_url, 0)
+            gtk.main()
         tend = datetime.now()
         loadTime = tend-tstart
         diff = (loadTime.seconds+(float(loadTime.microseconds)/1000000))
@@ -212,103 +204,60 @@ def callback(ch, method, properties, body):
         #print loadTime.seconds, " " , loadTime.microseconds
         #print " [worker",wid,"] Response Time:","%.6f" % (diff)
     else:
-        print " [worker",wid,"] Invalid command"
+        warn("invalid command")
 
-def fastcrawlHandler(ch, method, properties, body):
-    msg1.ack(ch,method)
-    #print " [worker",wid,"] Received %r" % (body,)
-    message = json.loads(body)
-    if message.get("command") == quit:
-        time.sleep(2);
-        msg1.stoprecv()
-    elif message.get("command") == visit:
-        url = message.get("url")
-        #print " [worker",wid,"] visiting: ", url
-        tstart = datetime.now()
-        rdepth = int(message.get("depth"))
-        browser.visit(url,rdepth)
-        gtk.main()
-        tend = datetime.now()
-        loadTime = tend-tstart
-        diff = (loadTime.seconds+(float(loadTime.microseconds)/1000000))
-        docname = url + str(randstr(16))
-        db[docname] = {'url' : url, 'Response Time' : diff}
-        #print loadTime.seconds, " " , loadTime.microseconds
-        #print " [worker",wid,"] Response Time:","%.6f" % (diff)
-    else:
-        print " [worker",wid,"] Invalid command"
+    # Ack only after processing message, for two reasons: (1) avoids
+    # a race with controller where he sees an empty queue and thinks
+    # all works is done when in reality workers have yet to add more work,
+    # and (2) fault-tolerance -- if a worker dies before sending an ack, 
+    # we would like some other worker to pick up the task (RabbitMQ does
+    # this automatically for us).
+    ch.basic_ack(delivery_tag = method.delivery_tag)    
 
-def usage():
-    print "python browser.py -i <wid> -r <rabbitMQ_server> -q <rabbitMQ_queue> -s <couchdb_server> -b <dbName> -d <depth> -m <maxurl>-h <help>"
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__.strip(),
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            add_help=False)
+    parser.add_argument("-h", "--help", action="help",
+                        help="Show this help message and exit")
+    parser.add_argument("-i", "--id", default=None,
+            help="ID to assign to worker (for debugging)")
+    parser.add_argument("-r", "--queue-server", default="localhost",
+            help="Hostname of RabbitMQ queueing service")
+    parser.add_argument("-q", "--queue-name", default="testrun",
+            help="Name of queue used to distribute work")
+    parser.add_argument("-s", "--db-server", default="http://localhost:5984",
+            help="URL of database server used to store results")
+    parser.add_argument("-b", "--db-name", default="workload_sim",
+            help="Name of database to store results in")
+    parser.add_argument("-d", "--depth", type=int, default=3,
+            help="Maximum crawl depth")
+    parser.add_argument("-m", "--branch-factor", type=int, default=5,
+            help="Maximum number of URLs to explore per page visited")
+    parser.add_argument("-l", "--log-file", default="/tmp/worker",
+            help="Name of database to store results in")
+    parser.add_argument("-p", "--proxy", default=None,
+            help="Proxy to use when generating load")
+
+    args = parser.parse_args()
+    return args
 
 if __name__ == '__main__':
+    args = parse_args()
+    if args.id == None:
+        args.id = str(uuid.uuid4())[0:2]
+    logging.basicConfig(level=logging.INFO,
+      format="[worker-%s] "%(args.id) + "%(levelname)s %(message)s",
+      filename="%s-%s.log"%(args.log_file, args.id) if args.log_file else None,
+      stream=sys.stderr,
+      filemode='w')
 
-    #Handle command line arguments
+    browser = Browser(args.branch_factor)
+    info("Worker started")
+    cdb = couchdb.Server(args.db_server)
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hi:r:q:s:b:d:f:m: ",["help", "wid=", "rabbitMQServer=", "rabbitMQQueue=", "server=", "dbName=", "depth=", "fastcrawl=" ,"maxurl="])
-    except getopt.GetoptError, err:
-        #print help information & exit
-        print str(err)
-        usage()
-        sys.exit(2)
-
-    wid = None
-    rabbitMQServer = None
-    rabbitMQQueue = None
-    couchDbServer = None
-    couchDbName = None
-    depth = None
-    fastcrawl = None
-    maxurl = None
-    for o, a in opts:
-        if o in ("-h", "--help"):
-            usage()
-            sys.exit()
-        elif o in ("-i", "--wid"):
-            wid = a
-        elif o in ("-r", "--rabbitMQServer"):
-            rabbitMQServer = a
-        elif o in ("-q", "--rabbitMQQueue"):
-            rabbitMQQueue = a
-        elif o in ("-s", "--server"):
-            couchDbServer = a
-        elif o in ("-b", "--dbName"):
-            couchDbName = str(a)
-        elif o in ("-d", "--depth"):
-            depth = str(a)
-        elif o in ("-f", "--fastcrawl"):
-            fastcrawl = str(a)
-        elif o in ("-m", "--maxurl"):
-            maxurl = a
-        else:
-            assert False, "unhandled option"
-    if None in [wid, rabbitMQServer, rabbitMQQueue, couchDbServer, couchDbName, depth, fastcrawl, maxurl]:
-        usage()
-        sys.exit()
-
-    quit = "quit"
-    visit = "visit"
-
-    #wid = sys.argv[1]
-    #rabbitMQServer = sys.argv[2]
-    #rabbitMQQueue = sys.argv[3]
-
-    browser = Browser(fastcrawl,int(maxurl))
-    print " [worker",wid,"] Started"
-    cdb = couchdb.Server(couchDbServer)
-    try:
-        db = cdb[couchDbName]
+        db = cdb[args.db_name]
     except:
-        db = cdb.create(couchDbName)
-    msg = None
-    msg = RabbitMQ(rabbitMQServer,rabbitMQQueue)
-    #if fastcrawl == "no":
-    #       msg = RabbitMQ(rabbitMQServer,rabbitMQQueue)
-    #       msg.recv(callback)
-    if fastcrawl == "yes":
-        msg1 = RabbitMQ(rabbitMQServer,"crawl"+rabbitMQQueue)
-        msg1.recv(fastcrawlHandler)
-
-    msg.recv(callback)
-#browser.visit('http://www.google.com')
-#gtk.main()
+        db = cdb.create(args.db_name)
+    queue = RabbitMQ(args.queue_server, args.queue_name)
+    queue.recv(callback)
