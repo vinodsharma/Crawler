@@ -11,9 +11,13 @@ import getopt
 import couchdb
 import json
 
+logfile = None
+
 class Workers:
     def __init__(self,worker,numWorker, rabbitMQServer ,rabbitMQQueue,
-                        couchDbServer, couchDbName, depth, fastcrawl, maxurl):
+                        couchDbServer, couchDbName, depth, fastcrawl, 
+                        maxurl, navigationDepth, historyJmpValue,
+                        lFile):
         self.worker = worker
         self.numWorker = numWorker
         self.rmqServer = rabbitMQServer
@@ -23,6 +27,9 @@ class Workers:
         self.depth = depth
         self.fastcrawl = fastcrawl
         self.maxurl = maxurl
+        self.navigationDepth = navigationDepth
+        self.historyJmpValue = historyJmpValue
+        self.logFile = lFile
 
     def start(self):
         for i in range(int(self.numWorker)):
@@ -34,7 +41,11 @@ class Workers:
                                     "-b", self.cdbName,
                                     "-d", self.depth,
                                     "-f", self.fastcrawl,
-                                    "-m", self.maxurl])
+                                    "-m", self.maxurl,
+                                    "-v", self.navigationDepth,
+                                    "-j", self.historyJmpValue,
+                                    "-l", self.logFile
+                                    ])
             #p = subprocess.Popen(self.worker)
 
     def stop(self,msgobj):
@@ -57,7 +68,6 @@ class RabbitMQ:
         self.channel.basic_publish(exchange='',
                                 routing_key=self.msgqueue,
                                 body=message)
-        print " [Controller] Sent ", message
 
     def recv(self, handler):
         self.channel.basic_qos(prefetch_count=5)
@@ -81,13 +91,22 @@ class RabbitMQ:
 
 
 def usage():
-    print "python browser.py -n <num_workers> -r <rabbitMQ_server> -q <rabbitMQ_queue> -s <couchdb_server> -b <dbName> -d <crawl_depth> -f <fastcrawl> -m <maxurl> -h <help>"
+    print 'python controller.py -n <num_workers> -r <rabbitMQ_server> ' \
+            '-q <rabbitMQ_queue> -s <couchdb_server> -b <dbName> ' \
+            '-d <crawl_depth> -f <fastcrawl> -m <maxurl> -h <help>' \
+            '-v <navigation_depth> -j <history_jmp_value> -u <url_file>'\
+            '-l <logfile>' 
 
 if __name__ == '__main__':
 
     #Handle command line arguments
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hn:r:q:s:b:d:f:m: ",["help", "numWorkers=", "rabbitMQServer=", "rabbitMQQueue=", "server=", "dbName=", "depth=", "fastcrawl=", "maxurl="])
+        opts, args = getopt.getopt(sys.argv[1:], 
+                        "hn:r:q:s:b:d:f:m:v:j:u:l: ",
+                        ["help", "numWorkers=", "rabbitMQServer=", 
+                        "rabbitMQQueue=", "server=", "dbName=", 
+                        "depth=", "fastcrawl=", "maxurl=", "navigationDepth=", 
+                        "historyJmpValue=", "urlFile=", "logFile="])
     except getopt.GetoptError, err:
         #print help information & exit
         print str(err)
@@ -102,6 +121,10 @@ if __name__ == '__main__':
     depth = None
     fastcrawl = None
     maxurl = None
+    navigationDepth = None
+    historyJmpValue = None
+    urlFile =None
+    logFileName = None
     for o, a in opts:
         if o in ("-h", "--help"):
             usage()
@@ -122,14 +145,22 @@ if __name__ == '__main__':
             fastcrawl = str(a)
         elif o in ("-m", "--maxurl"):
             maxurl = a
+        elif o in ("-v", "--navigationDepth"):
+            navigationDepth = a
+        elif o in ("-j", "--historyJmpValue"):
+            historyJmpValue = a
+        elif o in ("-u", "--urlFile"):
+            urlFile = a
+        elif o in ("-l", "--logFile"):
+             logFileName = a
         else:
             assert False, "unhandled option"
-    if None in [numWorkers, rabbitMQServer, rabbitMQQueue, couchDbServer, couchDbName, depth, fastcrawl, maxurl]:
-        print couchDbName
+    if None in [numWorkers, rabbitMQServer, rabbitMQQueue, couchDbServer, couchDbName, depth, fastcrawl, maxurl, navigationDepth, historyJmpValue, urlFile, logFileName]:
         usage()
         sys.exit()
-
-
+    
+    logfile = open(logFileName+"_controller.log","w")
+    logfile.write(" [Controller Starte]\n")
     #connect to couchdb server & create the datebase
     cdb = couchdb.Server(couchDbServer)
     try:
@@ -152,7 +183,7 @@ if __name__ == '__main__':
         msg1 = RabbitMQ(rabbitMQServer,"crawl"+rabbitMQQueue)
 
     #Delegate the work to workers
-    workBook = xlrd.open_workbook('input.xls')
+    workBook = xlrd.open_workbook(urlFile)
     sheet = workBook.sheet_by_index(0)
     for rowIndex in range(sheet.nrows):
         if rowIndex == 0:
@@ -166,11 +197,12 @@ if __name__ == '__main__':
                 'depth': depth
                 }
         msg.send(json.dumps(msgToSend))
+        logfile.write(" [Controller] Sent " + str(msgToSend) + "\n")
         if fastcrawl == "yes":
             msg1.send(json.dumps(msgToSend))
 
     #start the workers on the main queue
-    workers = Workers("./browser.py", numWorkers, rabbitMQServer, rabbitMQQueue, couchDbServer, couchDbName, depth, fastcrawl, maxurl)
+    workers = Workers("./browser.py", numWorkers, rabbitMQServer, rabbitMQQueue, couchDbServer, couchDbName, depth, fastcrawl, maxurl, navigationDepth, historyJmpValue, logFileName)
     workers.start()
     time.sleep(30)
 
@@ -178,7 +210,8 @@ if __name__ == '__main__':
         #Stop the workers when on the crawl queue
         while True:
             count1 = msg1.msgCount()
-            print " [Controller] Message Count: ", count1
+            print " [Controller] fastCrawl Message Count: ", count1
+            logfile.write(" [Controller] fastCrawl Message Count: " + str(count1) + "\n")
             if count1 == 0:
                 workers.stop(msg1)
                 break
@@ -190,13 +223,18 @@ if __name__ == '__main__':
     while True:
         count = msg.msgCount()
         print " [Controller] Message Count: ", count
+        logfile.write(" [Controller] Message Count: " + str(count) + "\n")
         if count == 0:
             time.sleep(30)
             count1 = msg.msgCount()
-            print " [Controller] Message Count: ", count1
+            print " [Controller] Second Message Count: ", count1
+            logfile.write(" [Controller] Second Message Count: " + str(count1) + "\n")
             if count1 == 0:
                 workers.stop(msg)
                 break
         time.sleep(20)
 
     msg.close()
+    print " [Controller] Quitting"
+    logfile.write(" [Controller] Quitting\n")
+    logfile.close()

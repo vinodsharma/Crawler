@@ -6,11 +6,15 @@ install coucdb python module & pika python module
 run make 
 
 #usage example
-python controller.py -n 3 -r localhost -q newhello -s http://localhost:5984 -b testrun2 -d 3 -f no -m 2
+python controller.py -n 1 -r localhost -q testhello -s http://localhost:5984 -b testrun2 -d 3 -f no -m 2 -v 3 -j 1 -u input.xls -l test1
 
 -n is the number of workers
 -d is the depth of the crawl
 -m is the maximum number of urls to fetech from a page
-
+-v is the navigation depth
+-j is the jump value in the history
+-u for urlfile
+-l for starting prefix for log files
+    log files will like prefix_worker#id.log
 keep -f to no as yes mode is not supported well at present
 
