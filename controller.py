@@ -20,7 +20,8 @@ from queue import RabbitMQ
 
 class Workers:
     def __init__(self,worker,numWorker, rabbitMQServer ,rabbitMQQueue,
-                        couchDbServer, couchDbName, depth, maxurl):
+                        couchDbServer, couchDbName, depth, maxurl,
+                        navigationDepth,historyJmpValue):
         self.worker = worker
         self.numWorker = numWorker
         self.rmqServer = rabbitMQServer
@@ -29,6 +30,8 @@ class Workers:
         self.cdbName = couchDbName
         self.depth = depth
         self.maxurl = maxurl
+        self.navigationDepth = navigationDepth
+        self.historyJmpValue = historyJmpValue
         self.children = []
 
     def start(self):
@@ -40,7 +43,9 @@ class Workers:
                         "-s", self.cdbServer,
                         "-b", self.cdbName,
                         "-d", str(self.depth),
-                        "-m", str(self.maxurl)]
+                        "-m", str(self.maxurl),
+                        "-v", str(self.navigationDepth),
+                        "-j", str(self.historyJmpValue)]
             if args.proxy:
                 arg_list.extend(["-p", args.proxy])
             p = subprocess.Popen(arg_list)
@@ -85,6 +90,12 @@ def parse_args():
             help="Maximum number of URLs to explore per page visited")
     parser.add_argument("-p", "--proxy", default=None,
             help="Proxy to use when generating load")
+    parser.add_argument("-v", "--navigation-depth", type=int, default=3,
+            help="Maximum crawl depth for navigation test")
+    parser.add_argument("-j", "--history-jump", type=int, default=1,
+            help="Maximum Jump in history when navigate")
+    parser.add_argument("-u", "--url-file", default=None,
+            help="File containing the list of urls")
 
     args = parser.parse_args()
     return args
@@ -112,7 +123,7 @@ if __name__ == '__main__':
     queue = RabbitMQ(args.queue_server, args.queue_name, purge=True)
 
     #Delegate the work to workers
-    workBook = xlrd.open_workbook('input.xls')
+    workBook = xlrd.open_workbook(args.url_file)
     sheet = workBook.sheet_by_index(0)
     for rowIndex in range(sheet.nrows):
         if rowIndex == 0:
@@ -127,7 +138,10 @@ if __name__ == '__main__':
         queue.send(json.dumps(msgToSend))
 
     # Start the workers, assign them to the specified message queue.
-    workers = Workers("./worker", args.nr_workers, args.queue_server, args.queue_name, args.db_server, args.db_name, args.depth, args.branch_factor)
+    workers = Workers("./worker", args.nr_workers, args.queue_server, 
+                        args.queue_name, args.db_server, args.db_name, 
+                        args.depth, args.branch_factor,args.navigation_depth,
+                        history_jump)
     workers.start()
 
     # In case we are abrupty terminateed...

@@ -126,6 +126,147 @@ _webview_get_dom_window(WebViewObject *self, PyObject* unused)
     return pywebkit_api_fns.win(ptr);
 }
 
+static PyObject *
+_webkit_web_view_go_back(WebViewObject *self, PyObject* args)
+{
+    //WebKitWebBackForwardList * bflist = webkit_web_view_get_back_forward_list(self->webview);
+    //if(webkit_web_back_forward_list_get_back_length(bflist) > 0)
+    int ret = -1;
+    int index = 0;
+    if (!PyArg_ParseTuple(args, "i", &index))
+    {
+        ret = -2; //invalid arg
+        return Py_BuildValue("i", ret);
+    }
+    //printf("Go_Back argument::%d\n",index);
+    
+    if(index == 0)
+    {
+        ret = -3; //cannot go back to current item
+        return Py_BuildValue("i", ret);
+        
+    }
+    else
+    {
+        if(index == 1) // no jump required
+        {
+            if(webkit_web_view_can_go_back(self->webview))
+            {
+                webkit_web_view_go_back(self->webview);
+                ret = 1; // cannot go back
+                return Py_BuildValue("i", ret);
+            }
+            else
+            {
+                ret = -1; //cannot go back
+                return Py_BuildValue("i", ret);
+            }
+        }
+        else // jump needed
+        {
+            index = index * -1;
+            WebKitWebBackForwardList * bflist = webkit_web_view_get_back_forward_list(self->webview);
+            if(bflist == NULL)
+            {
+                ret = -1; //cannot go back
+                return Py_BuildValue("i", ret);
+            }
+            WebKitWebHistoryItem * item = webkit_web_back_forward_list_get_nth_item(bflist, index);
+            if(item == NULL)
+            {
+                ret = -1; //cannot go back
+                return Py_BuildValue("i", ret);
+            }
+            //webkit_web_back_forward_list_go_to_item(bflist,item);
+            if(!webkit_web_view_go_to_back_forward_item(self->webview,item))
+            {
+                ret = -1; //cannot go back
+                return Py_BuildValue("i", ret);
+            }
+            ret = 1;
+            return Py_BuildValue("i", ret);
+        }
+    }
+    return Py_BuildValue("i", ret);
+}
+
+static PyObject *
+_webkit_web_view_go_forward(WebViewObject *self, PyObject* args)
+{
+    int ret = -1;
+    int index = 0;
+    if (!PyArg_ParseTuple(args, "i", &index))
+    {
+        ret = -2; //invalid arg
+        return Py_BuildValue("i", ret);
+    }
+    //printf("Go_Forward argument::%d\n",index);
+    
+    if(index == 0)
+    {
+        ret = -3; //cannot go forward to current item
+        return Py_BuildValue("i", ret);
+        
+    }
+    else
+    {
+        if(index == 1) // no jump required
+        {
+            if(webkit_web_view_can_go_forward(self->webview))
+            {
+                webkit_web_view_go_forward(self->webview);
+                ret = 1; // cannot go forward
+                return Py_BuildValue("i", ret);
+            }
+            else
+            {
+                ret = -1; //cannot go forward
+                return Py_BuildValue("i", ret);
+            }
+        }
+        else // jump needed
+        {
+            WebKitWebBackForwardList * bflist = webkit_web_view_get_back_forward_list(self->webview);
+            if(bflist == NULL)
+            {
+                ret = -1; //cannot go forward
+                return Py_BuildValue("i", ret);
+            }
+            WebKitWebHistoryItem * item = webkit_web_back_forward_list_get_nth_item(bflist, index);
+            if(item == NULL)
+            {
+                ret = -1; //cannot go forward
+                return Py_BuildValue("i", ret);
+            }
+            //webkit_web_back_forward_list_go_to_item(bflist,item);
+            if(!webkit_web_view_go_to_back_forward_item(self->webview,item))
+            {
+                ret = -1; //cannot go forward
+                return Py_BuildValue("i", ret);
+            }
+            ret = 1;
+            return Py_BuildValue("i", ret);
+        }
+    }
+    return Py_BuildValue("i", ret);
+}
+
+static PyObject *
+_webkit_web_view_get_back_history_length(WebViewObject *self, PyObject* unused)
+{
+    WebKitWebBackForwardList * bflist = webkit_web_view_get_back_forward_list(self->webview);
+    gint ret = webkit_web_back_forward_list_get_back_length(bflist);
+    return Py_BuildValue("i", ret);
+}
+
+static PyObject *
+_webkit_web_view_get_forward_history_length(WebViewObject *self, PyObject* unused)
+{
+    WebKitWebBackForwardList * bflist = webkit_web_view_get_back_forward_list(self->webview);
+    gint ret = webkit_web_back_forward_list_get_forward_length(bflist);
+    return Py_BuildValue("i", ret);
+}
+
 static void _webview_docloaded_cb(WebKitWebFrame *view, GParamSpec* pspec,
                                   gpointer data)
 {
@@ -251,6 +392,18 @@ static PyMethodDef WebView_methods[] = {
     {"GetDomDocument", (PyCFunction)_webview_get_dom_document,
                 METH_NOARGS,
      PyDoc_STR("Gets DOM Document object")},
+    {"get_back_history_length", (PyCFunction)_webkit_web_view_get_back_history_length,
+                METH_NOARGS,
+     PyDoc_STR("Gets back history length")},
+    {"get_forward_history_length", (PyCFunction)_webkit_web_view_get_forward_history_length,
+                METH_NOARGS,
+     PyDoc_STR("Gets forward history length")},
+    {"go_back", (PyCFunction)_webkit_web_view_go_back,
+                METH_VARARGS,
+     PyDoc_STR("Go Back")},
+    {"go_forward", (PyCFunction)_webkit_web_view_go_forward,
+                METH_VARARGS,
+     PyDoc_STR("Go Forward")},
     {"GetDomWindow", (PyCFunction)_webview_get_dom_window,
                 METH_NOARGS,
      PyDoc_STR("Gets DOM Window object")},

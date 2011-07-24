@@ -164,14 +164,127 @@ class Browser():
         DOMWalker(self.__rdepth,self.__maxurl2add).walk_node(document)
         self.__rdepth = None
         gtk.mainquit()
+    
+    def go_back(self,index):
+        if self.__webkit.go_back(index) > 0:
+            return True
+        else:
+            return False
+    
+    def go_forward(self,index):
+        if self.__webkit.go_forward(index) > 0:
+            return True
+        else:
+            return False
 
-    def _is_Page_Loaded(self):
-        debug("_is_Page_Loaded")
-        self.pageLoaded = True
-        gtk.mainquit()
+    def get_back_history_length(self):
+        return self.__webkit.get_back_history_length()
+    
+    def get_forward_history_length(self):
+        return self.__webkit.get_forward_history_length()
+
+    def Crawl(self):
+        document = self.__webkit.GetDomDocument()
+        urlList = []
+        self.GetUrlList(document,urlList)
+        #print "NumUrl on this page= " , len(urlList)
+        #for item in urlList:
+        # print item
+        #print random.randint(0,len(urlList))
+        urlListLen = len(urlList)
+        if urlListLen <= 0:
+            #no url to the page
+            return False
+        elif urlListLen == 1:
+            # one url on the page
+            self.visit(urlList[0],0)
+            gtk.main()
+            return True
+        else:
+            self.visit(urlList[random.randint(0,urlListLen-1)],0)
+            gtk.main()
+            return True
+    
+    def GetUrlList(self, node,urllist):
+        if node.nodeName is not None:
+            if node.nodeName == "A":
+                if node.hasAttribute("href") and node.__getattribute__("href").find("http") !=-1:
+                    urlval = node.__getattribute__("href")
+                    #print urlval
+                    urllist.append(urlval)
+    
+        children = node.childNodes
+        for i in range(children.length):
+            child = children.item(i)
+            if child is not None:
+                self.GetUrlList(child,urllist)
+
+def doNavigationTest(browser,navigationDepth,jumpValue):
+    # this function will first perform crawling & then do navigation
+    browser.ndepth = navigationDepth;
+    urlVisited = []
+    info("-----Navigation Crawl Start-----")
+    while browser.ndepth > 0:
+        ret = browser.Crawl()
+        if not ret:
+            info("no Urls on the page: stopping the crawlURL")
+            break;
+        browser.ndepth-=1
+    info("-----Navigation Crawl End-----")
+
+    if browser.ndepth == navigationDepth:
+        warn("Cannot start navigation test due to unsucessfulcrawl")
+        return 0 # test cannot be started
+    
+    # test backward navigation
+    backcount = navigationDepth - browser.ndepth
+    while backcount > 0:
+        info("Going Back")
+        if browser.go_back(1):
+            gtk.main()
+        else:
+            warn("Going Back Error")
+            return -1
+        backcount-=1
+    
+    # test forward navigation
+    forwardcount = navigationDepth - browser.ndepth
+    while forwardcount > 0:
+        info("Going Forward")
+        if browser.go_forward(1):
+            gtk.main()
+        else:
+            info("Going Forward Error")
+            return -1
+        forwardcount-=1
+    
+    # test jump back navigation
+    jumpbackcount = navigationDepth - browser.ndepth
+    jumpCount = 0
+    while jumpbackcount > jumpValue:
+        info("Jumping Back by " + str(jumpValue))
+        if browser.go_back(jumpValue+1):
+            gtk.main()
+        else:
+            warn("Jumping Back Error: JumpValue=" +str(jumpValue))
+            return -2
+        jumpbackcount-=2
+        jumpCount+=1
+    
+    # test jump forward navigation
+    while jumpCount > 0:
+        info("Jumping Forward by " + str(jumpValue))
+        if browser.go_forward(jumpValue+1):
+            gtk.main()
+        else:
+            warn("Jumping forward Error: JumpValue=" + str(jumpValue))
+            return -2
+        jumpCount-=1
+
+    return 1;
 
 def callback(ch, method, properties, body):
-    info("received %r" % (body,))
+    info("Received %r" % (body,))
     message = json.loads(body)
     if message.get("command") == "quit":
         info("Got quit command, exiting...")
@@ -187,22 +300,39 @@ def callback(ch, method, properties, body):
             browser.visit(url,rdepth)
             gtk.main()
 
-        #browser = Browser()
         tstart = datetime.now()
         # visit url to fetech the response time
-        if args.proxy:
-            browser1 = Browser(0)
-            target_url = "%s/?q="%(args.proxy) + url
-            info("Visiting URL: " + target_url)
-            browser1.visit(target_url, 0)
-            gtk.main()
+        #if args.proxy:
+        #    browser1 = Browser(0)
+        #    target_url = "%s/?q="%(args.proxy) + url
+        #    info("Visiting URL: " + target_url)
+        #    browser1.visit(target_url, 0)
+        #    gtk.main()
+        browser1 = Browser(0)
+        target_url = url
+        info("Visiting URL: " + target_url)
+        browser1.visit(target_url, 0)
+        gtk.main()
         tend = datetime.now()
         loadTime = tend-tstart
         diff = (loadTime.seconds+(float(loadTime.microseconds)/1000000))
         docname = url + str(randstr(16))
         db[docname] = {'url' : url, 'Response Time' : diff}
-        #print loadTime.seconds, " " , loadTime.microseconds
-        #print " [worker",wid,"] Response Time:","%.6f" % (diff)
+        
+        #Check if Navigation works: first keep visiting urls until navigation depth
+        #becomes zero or reached a page with no urls & 
+        #then try backward & forward navigation
+        info("##########Navigation Test Start#########")
+        ret = doNavigationTest(browser1,args.navigation_depth,args.history_jump)
+        if ret > 0:
+            info("Navigation Test Passed")
+        elif ret == 0:
+            info("Navigation Test Not performed")
+        else:
+            warn("Navigation Test Failed")
+
+        info("##########Navigation Test End###########")
+    
     else:
         warn("invalid command")
 
@@ -238,6 +368,10 @@ def parse_args():
             help="Name of database to store results in")
     parser.add_argument("-p", "--proxy", default=None,
             help="Proxy to use when generating load")
+    parser.add_argument("-v", "--navigation-depth", type=int, default=3,
+            help="Maximum crawl depth for navigation test")
+    parser.add_argument("-j", "--history-jump", type=int, default=1,
+            help="Maximum Jump in history when navigate")
 
     args = parser.parse_args()
     return args
