@@ -162,6 +162,7 @@ class Browser():
         #print >> sys.stderr,  "Title:", document.title
         #print >> sys.stderr,  "Cookies:", document.cookie
         #DOMWalker(self.__rdepth,self.__maxurl2add).walk_node(document)
+        info("URL: "+str(document.URL))
         #generate more work by Enqueue urls to the queue
         if self.__rdepth > 0:
             urlList = []
