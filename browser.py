@@ -174,7 +174,7 @@ class Browser():
                     break
                 # one url on the page
                 elif urlListLen == 1:
-                    urlval = urlList[0],0)
+                    urlval = urlList[0]
                 else:
                     urlval = urlList[random.randint(0,urlListLen-1)]
                 udepth = str(self.__rdepth-1)
