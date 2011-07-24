@@ -161,7 +161,32 @@ class Browser():
         #print >> sys.stderr,  "URL:", document.URL
         #print >> sys.stderr,  "Title:", document.title
         #print >> sys.stderr,  "Cookies:", document.cookie
-        DOMWalker(self.__rdepth,self.__maxurl2add).walk_node(document)
+        #DOMWalker(self.__rdepth,self.__maxurl2add).walk_node(document)
+        #generate more work by Enqueue urls to the queue
+        if self.__rdepth > 0:
+            urlList = []
+            self.GetUrlList(document,urlList)
+            urlListLen = len(urlList)
+            urlAdded = 0;
+            while urlAdded < self.__maxurl2add and urlAdded < urlListLen:
+                #no url to the page
+                if urlListLen <= 0:
+                    break
+                # one url on the page
+                elif urlListLen == 1:
+                    urlval = urlList[0],0)
+                else:
+                    urlval = urlList[random.randint(0,urlListLen-1)]
+                udepth = str(self.__rdepth-1)
+                msgToSend = {
+                            'command': "visit",
+                            'url': urlval,
+                            'depth': udepth
+                            }
+
+                queue.send(json.dumps(msgToSend))
+                urlAdded+=1
+
         self.__rdepth = None
         gtk.mainquit()
     
