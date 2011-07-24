@@ -145,7 +145,7 @@ if __name__ == '__main__':
     workers = Workers("./worker", args.nr_workers, args.queue_server, 
                         args.queue_name, args.db_server, args.db_name, 
                         args.depth, args.branch_factor,args.navigation_depth,
-                        history_jump)
+                        args.history_jump)
     workers.start()
 
     # In case we are abrupty terminateed...
