@@ -47,7 +47,7 @@ class Workers:
                         "-v", str(self.navigationDepth),
                         "-j", str(self.historyJmpValue)]
             if args.log_file:
-                arg_list.extend(["-l", args.logfile])
+                arg_list.extend(["-l", args.log_file])
             if args.proxy:
                 arg_list.extend(["-p", args.proxy])
             p = subprocess.Popen(arg_list)
