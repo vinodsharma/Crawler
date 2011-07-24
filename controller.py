@@ -46,6 +46,8 @@ class Workers:
                         "-m", str(self.maxurl),
                         "-v", str(self.navigationDepth),
                         "-j", str(self.historyJmpValue)]
+            if args.log_file:
+                arg_list.extend(["-l", args.logfile])
             if args.proxy:
                 arg_list.extend(["-p", args.proxy])
             p = subprocess.Popen(arg_list)
@@ -88,6 +90,8 @@ def parse_args():
             help="Maximum crawl depth")
     parser.add_argument("-m", "--branch-factor", type=int, default=5,
             help="Maximum number of URLs to explore per page visited")
+    parser.add_argument("-l", "--log-file", default=None,
+            help="Name of database to store results in")
     parser.add_argument("-p", "--proxy", default=None,
             help="Proxy to use when generating load")
     parser.add_argument("-v", "--navigation-depth", type=int, default=3,
