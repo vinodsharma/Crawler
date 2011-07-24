@@ -142,7 +142,7 @@ if __name__ == '__main__':
         queue.send(json.dumps(msgToSend))
 
     # Start the workers, assign them to the specified message queue.
-    workers = Workers("./worker", args.nr_workers, args.queue_server, 
+    workers = Workers("./browser.py", args.nr_workers, args.queue_server, 
                         args.queue_name, args.db_server, args.db_name, 
                         args.depth, args.branch_factor,args.navigation_depth,
                         args.history_jump)
